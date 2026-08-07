@@ -10,6 +10,7 @@ from fastapi.templating import Jinja2Templates
 from lakebase import initialize_database, seed_database, create_default_admin, run_query
 from config import ENV_MODE
 from tickets import router as tickets_router
+from auth import get_current_user, get_user_role
 
 app = FastAPI()
 
@@ -38,6 +39,29 @@ def root(request: Request):
             "request": request
         }
     )
+
+
+@app.get("/api/auth/me")
+def get_current_user_info(request: Request):
+    """
+    Returns the current authenticated user's email and role.
+    """
+    try:
+        email = get_current_user(request)
+        role = get_user_role(email)
+        
+        return {
+            "email": email,
+            "role": role
+        }
+    except Exception as e:
+        return JSONResponse(
+            status_code=401,
+            content={
+                "error": "Unauthorized",
+                "message": str(e)
+            }
+        )
 
 
 @app.get("/health")

@@ -427,17 +427,46 @@
         let currentUser = null;
         let userRole = null;
 
-        // Simular autenticação (substituir por autenticação real)
+        // Obter email do usuário autenticado do Databricks
         async function initAuth() {
-            // Por enquanto, usar o email do header da requisição
-            // Em produção, isso virá do sistema de autenticação
-            currentUser = 'usuario@exemplo.com';
+            try {
+                // Chamar o endpoint de autenticação para obter o email real do usuário
+                const response = await fetch('/api/auth/me');
+                
+                if (!response.ok) {
+                    throw new Error('Falha ao autenticar usuário');
+                }
+                
+                const data = await response.json();
+                
+                if (data.email) {
+                    currentUser = data.email;
+                    userRole = data.role;
+                    console.log('Usuário autenticado:', currentUser, 'Role:', userRole);
+                } else {
+                    throw new Error('Email do usuário não encontrado');
+                }
+            } catch (error) {
+                console.error('Erro ao obter usuário:', error);
+                alert('Erro ao autenticar. Por favor, recarregue a página.');
+                // Não definir um valor padrão - forçar o usuário a ter autenticação válida
+                throw error;
+            }
         }
 
         // Carregar lista de tickets
         async function loadTickets() {
+            if (!currentUser) {
+                console.error('Usuário não autenticado');
+                return;
+            }
+            
             try {
-                const response = await fetch('/api/tickets');
+                const response = await fetch('/api/tickets', {
+                    headers: {
+                        'X-Forwarded-Email': currentUser
+                    }
+                });
                 const tickets = await response.json();
                 
                 const ticketList = document.getElementById('ticketList');
@@ -448,7 +477,7 @@
                 }
 
                 ticketList.innerHTML = tickets.map(ticket => `
-                    <li class="ticket-item" onclick="loadTicketDetail(${ticket.ticket_id})">
+                    <li class="ticket-item" onclick="loadTicketDetail(${ticket.ticket_id}, this)">
                         <div class="ticket-title">${ticket.title}</div>
                         <div class="ticket-meta">
                             <span class="status-badge status-${ticket.status}">${getStatusLabel(ticket.status)}</span>
@@ -464,9 +493,18 @@
         }
 
         // Carregar detalhes de um ticket
-        async function loadTicketDetail(ticketId) {
+        async function loadTicketDetail(ticketId, clickedElement) {
+            if (!currentUser) {
+                alert('Usuário não autenticado');
+                return;
+            }
+            
             try {
-                const response = await fetch(`/api/tickets/${ticketId}`);
+                const response = await fetch(`/api/tickets/${ticketId}`, {
+                    headers: {
+                        'X-Forwarded-Email': currentUser
+                    }
+                });
                 const data = await response.json();
                 
                 if (data.error) {
@@ -478,7 +516,9 @@
 
                 // Marcar ticket ativo na lista
                 document.querySelectorAll('.ticket-item').forEach(item => item.classList.remove('active'));
-                event.currentTarget.classList.add('active');
+                if (clickedElement) {
+                    clickedElement.classList.add('active');
+                }
 
                 // Esconder empty state e mostrar detalhes
                 document.getElementById('emptyState').style.display = 'none';
@@ -574,6 +614,11 @@
         async function createTicket(event) {
             event.preventDefault();
             
+            if (!currentUser) {
+                alert('Usuário não autenticado');
+                return;
+            }
+            
             const title = document.getElementById('ticketTitle').value;
             const description = document.getElementById('ticketDescription').value;
 
@@ -582,6 +627,7 @@
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/x-www-form-urlencoded',
+                        'X-Forwarded-Email': currentUser
                     },
                     body: new URLSearchParams({
                         title: title,
@@ -611,6 +657,11 @@
         async function addMessage(event) {
             event.preventDefault();
             
+            if (!currentUser) {
+                alert('Usuário não autenticado');
+                return;
+            }
+            
             if (!currentTicketId) {
                 alert('Nenhum ticket selecionado');
                 return;
@@ -623,6 +674,7 @@
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/x-www-form-urlencoded',
+                        'X-Forwarded-Email': currentUser
                     },
                     body: new URLSearchParams({
                         message: message
@@ -647,6 +699,11 @@
         async function updateStatus(event) {
             event.preventDefault();
             
+            if (!currentUser) {
+                alert('Usuário não autenticado');
+                return;
+            }
+            
             if (!currentTicketId) {
                 alert('Nenhum ticket selecionado');
                 return;
@@ -659,6 +716,7 @@
                     method: 'PATCH',
                     headers: {
                         'Content-Type': 'application/x-www-form-urlencoded',
+                        'X-Forwarded-Email': currentUser
                     },
                     body: new URLSearchParams({
                         status: status
@@ -705,8 +763,21 @@
 
         // Inicializar aplicação
         async function init() {
-            await initAuth();
-            await loadTickets();
+            try {
+                // Aguardar autenticação antes de carregar dados
+                await initAuth();
+                
+                // Só carregar tickets se tivermos um usuário autenticado
+                if (currentUser) {
+                    await loadTickets();
+                } else {
+                    throw new Error('Usuário não autenticado');
+                }
+            } catch (error) {
+                console.error('Erro ao inicializar aplicação:', error);
+                document.getElementById('ticketList').innerHTML = 
+                    '<li class="empty-state">Erro de autenticação. Por favor, recarregue a página.</li>';
+            }
         }
 
         // Carregar quando página estiver pronta
